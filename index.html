@@ -61,13 +61,14 @@ nav{display:flex;gap:14px}nav a{color:var(--mu);font-weight:600}nav a:hover{colo
 .tag.bad{color:var(--lose);border-color:var(--lose)}
 .ab h4{color:var(--tx);font-size:17px;font-family:"Barlow Condensed"}
 .ab .it small{color:var(--mu);font-size:13px;line-height:1.3}
+.tb{width:100%;border-collapse:collapse;font-size:14px}.tb td{padding:6px;border-bottom:1px solid var(--line);white-space:nowrap}.tb img{width:52px;border-radius:3px;display:block}.tbw{overflow-x:auto}.tb th{text-align:left;color:var(--mu);font-weight:600;padding:6px;white-space:nowrap}
 .tools{display:flex;gap:8px;align-items:center;margin-bottom:12px;color:var(--mu);font-size:14px}
 </style>
 </head>
 <body>
 <header>
   <h1>Dota <span>Builds</span></h1>
-  <nav><a href="#/">Heróis</a><a href="#/counters">Counters</a></nav>
+  <nav><a href="#/">Heróis</a><a href="#/counters">Counters</a><a href="#/player">Minhas partidas</a></nav>
   <input id="q" type="search" placeholder="Buscar herói" aria-label="Buscar herói">
   <select id="rank" aria-label="Faixa de rank"></select>
 </header>
@@ -153,6 +154,7 @@ const arr=x=>x==null?[]:[].concat(x);
 function sug(a){
   const b=arr(a.behavior).join(' '), d=arr(a.dmg_type).join(' '), x=(a.desc||'').toLowerCase(), pierce=/yes/i.test(a.bkbpierce||'');
   const s=[], add=(k,r)=>{if(byKey[k]&&!s.some(y=>y[0]===k))s.push([k,r])};
+  if(/invisib/.test(x)){add('dust','Revela unidades invisíveis (consumível).');add('ward_sentry','Sentry Ward revela invisíveis na área.');add('gem','Gem of True Sight revela invisíveis próximos.')}
   if(/passive/i.test(b)&&!/target|aoe|channel/i.test(b)) return s;
   if(/unit target/i.test(b)){add('sphere','Bloqueia uma habilidade em alvo único.');add('lotus_orb','Reflete habilidades em alvo.')}
   if(/stun|hex|silence|root|sleep|fear|taunt|disable/.test(x)&&!pierce) add('black_king_bar','Imunidade à magia contra o controle.');
@@ -167,10 +169,10 @@ async function abilities(h){
   try{
     const [ha,ab]=await Promise.all([get('/constants/hero_abilities'),get('/constants/abilities')]);
     const html=(ha[h.name]?.abilities||[]).map(k=>ab[k]).filter(a=>a&&a.dname).map(a=>{
-      const s=sug(a); if(!s.length) return '';
+      const s=sug(a);
       const b=arr(a.behavior).join(' '), pierce=/yes/i.test(a.bkbpierce||'');
       const tg=[/unit target/i.test(b)?'Alvo em unidade':/point/i.test(b)?'Em ponto/área':/no target/i.test(b)?'Sem alvo':'', arr(a.dmg_type).join('/')&&'Dano '+arr(a.dmg_type).join('/').toLowerCase(), a.dispellable&&a.dispellable!=='No'?'Dissipável':''].filter(Boolean).map(t=>`<span class="tag">${t}</span>`).join('')+(pierce?'<span class="tag bad">Ignora BKB</span>':'');
-      return `<div class="box"><h4>${a.dname}</h4>${tg}`+s.map(([k,r])=>`<div class="it"><img src="${CDN}${byKey[k].img}" alt="" onerror="this.style.visibility='hidden'"><div><div class="l"><span>${byKey[k].dname}</span></div><small>${r}</small></div></div>`).join('')+'</div>';
+      return `<div class="box"><h4>${a.dname}</h4>${tg}<p class="note" style="font-size:13px">${(a.desc||'').slice(0,200)}</p>`+(s.length?'':'<p class="note">Sem sugestão automática.</p>')+s.map(([k,r])=>`<div class="it"><img src="${CDN}${byKey[k].img}" alt="" onerror="this.style.visibility='hidden'"><div><div class="l"><span>${byKey[k].dname}</span></div><small>${r}</small></div></div>`).join('')+'</div>';
     }).join('');
     box.className='ab';
     box.innerHTML=(html?`<div class="cols">${html}</div>`:'<p class="note">Nenhuma habilidade com sugestão automática.</p>')+'<p class="note" style="margin-top:8px">As sugestões seguem regras baseadas nas propriedades de cada habilidade (tipo de alvo, tipo de dano, texto da descrição). Não vêm de win rate, então trate como ponto de partida.</p>';
@@ -211,12 +213,96 @@ async function cres(){
   }catch(e){fail(e)}
 }
 
+const RK=['Herald','Guardian','Crusader','Archon','Legend','Ancient','Divine','Immortal'];
+const rk=t=>t?(RK[Math.floor(t/10)-1]||'')+(t%10?' '+t%10:''):'Sem rank';
+function player(id){
+  app.innerHTML=`<h3 style="font-size:32px;margin-bottom:6px">Minhas partidas</h3>
+  <p class="note">Busque pelo apelido ou pelo ID de amigo do Dota. Nas configurações do jogo, "Expor dados públicos de partidas" precisa estar ligado, senão as partidas não aparecem.</p>
+  <input id="pp" placeholder="Apelido ou ID" aria-label="Apelido ou ID do jogador"><div id="pr"></div>`;
+  $('#pp').onchange=e=>{
+    let v=e.target.value.trim(); if(!v) return;
+    if(/^\d{16,}$/.test(v)) v=String(BigInt(v)-76561197960265728n);
+    /^\d+$/.test(v)?location.hash='#/player/'+v:psearch(v);
+  };
+  if(id) pload(id);
+}
+async function psearch(q){
+  const box=$('#pr'); box.innerHTML='<p class="msg">Buscando…</p>';
+  try{
+    const r=(await get('/search?q='+encodeURIComponent(q))).slice(0,10);
+    box.innerHTML=r.length?'<div class="box" style="margin-top:12px">'+r.map(x=>`<div class="mu" style="grid-template-columns:40px 1fr"><img src="${x.avatarfull}" alt="" style="width:40px;aspect-ratio:1"><a href="#/player/${x.account_id}">${x.personaname}</a></div>`).join('')+'</div>':'<p class="msg">Nenhum jogador encontrado. Tente o ID de amigo.</p>';
+  }catch(e){fail(e)}
+}
+const PT={all:['Todas',()=>true],rank:['Ranqueada',m=>m.lobby_type===7],normal:['Normal',m=>m.lobby_type===0&&m.game_mode!==23],turbo:['Turbo',m=>m.game_mode===23],custom:['Personalizada (lobby)',m=>m.lobby_type===1],bots:['Contra bots',m=>m.lobby_type===4]};
+let ptype='all', pdata=null, phero=null;
+const dm=m=>Math.max(m.duration/60,1);
+const mean=(a,f)=>a.length?a.reduce((t,m)=>t+f(m),0)/a.length:0;
+const f1=x=>x.toFixed(1);
+const MET=[['gold_per_min','GPM',m=>m.gold_per_min],['xp_per_min','XPM',m=>m.xp_per_min],['last_hits_per_min','Last hits/min',m=>m.last_hits/dm(m)],['kills_per_min','Abates/min',m=>m.kills/dm(m)],['hero_damage_per_min','Dano em heróis/min',m=>m.hero_damage/dm(m)]];
+
+async function pload(id){
+  const box=$('#pr'); box.innerHTML='<p class="msg">Carregando partidas…</p>';
+  try{
+    const F=['match_id','player_slot','radiant_win','duration','game_mode','lobby_type','hero_id','start_time','kills','deaths','assists','gold_per_min','xp_per_min','last_hits','hero_damage'];
+    const [pr,ms]=await Promise.all([get(`/players/${id}`),get(`/players/${id}/matches?limit=200&`+F.map(x=>'project='+x).join('&'))]);
+    if(!pr.profile){box.innerHTML='<p class="msg">Jogador não encontrado.</p>';return}
+    pdata={pr,all:ms.map(m=>({...m,win:(m.player_slot<128)===m.radiant_win}))};
+    prender();
+  }catch(e){fail(e)}
+}
+
+function prender(){
+  const {pr,all}=pdata, box=$('#pr'), rows=all.filter(PT[ptype][1]), n=rows.length, H=i=>heroes.find(h=>h.id===i);
+  const head=`<div class="hero-head"><img src="${pr.profile.avatarfull}" alt="" style="width:80px"><div><h2>${pr.profile.personaname||'Jogador'}</h2><p>${rk(pr.rank_tier)}</p></div></div>`;
+  if(!all.length){box.innerHTML=head+'<p class="msg">Nenhuma partida pública encontrada. O perfil pode estar com os dados de partidas privados.</p>';return}
+  let html=head+`<div class="tools">Tipo de partida <select id="pt" aria-label="Tipo de partida">${Object.entries(PT).map(([k,v])=>`<option value="${k}" ${k===ptype?'selected':''}>${v[0]}</option>`).join('')}</select><span>${n} partidas (das 200 mais recentes)</span></div>`;
+  if(!n){box.innerHTML=html+'<p class="msg">Nenhuma partida desse tipo entre as 200 mais recentes.</p>';$('#pt').onchange=e=>{ptype=e.target.value;prender()};return}
+  const w=rows.filter(m=>m.win), l=rows.filter(m=>!m.win);
+  const stat=(v,t)=>`<span class="stat"><strong>${v}</strong>${t}</span>`;
+  const sum=k=>rows.reduce((t,m)=>t+m[k],0);
+  html+=`<p>${stat(pct(w.length/n),'win rate')}${stat(f1((sum('kills')+sum('assists'))/Math.max(sum('deaths'),1)),'KDA ((K+A)/D)')}${stat(f1(mean(rows,m=>m.kills))+' / '+f1(mean(rows,m=>m.deaths))+' / '+f1(mean(rows,m=>m.assists)),'K / D / A médio')}${stat(Math.round(mean(rows,m=>m.gold_per_min)),'GPM médio')}</p>`;
+  if(w.length&&l.length){
+    const C=[['Abates',m=>m.kills],['Mortes',m=>m.deaths],['Assistências',m=>m.assists],...MET.map(x=>[x[1],x[2]])];
+    html+=`<section><h3>O que muda quando você vence</h3><div class="box tbw"><table class="tb"><tr><th></th><th>Vitórias (${w.length})</th><th>Derrotas (${l.length})</th></tr>`+C.map(([t,f])=>`<tr><td>${t}</td><td>${f1(mean(w,f))}</td><td>${f1(mean(l,f))}</td></tr>`).join('')+'</table></div></section>';
+  }
+  const cnt={}; rows.forEach(m=>cnt[m.hero_id]=(cnt[m.hero_id]||0)+1);
+  const list=Object.entries(cnt).filter(([,c])=>c>=3).sort((a,b)=>b[1]-a[1]);
+  html+='<section><h3>Comparação com referência</h3>';
+  if(list.length){
+    if(!list.some(([id])=>+id===phero)) phero=+list[0][0];
+    html+=`<div class="tools">Herói <select id="ph" aria-label="Herói">${list.map(([id,c])=>`<option value="${id}" ${+id===phero?'selected':''}>${H(+id)?.localized_name||id} (${c} jogos)</option>`).join('')}</select></div><div id="bm"></div>`;
+  }else html+='<p class="note">Precisa de pelo menos 3 partidas com o mesmo herói neste filtro.</p>';
+  html+='</section><section><h3>Últimas partidas</h3><div class="box tbw"><table class="tb">'+rows.slice(0,15).map(m=>{const h=H(m.hero_id);return `<tr><td>${h?`<img src="${img(h)}" alt="">`:''}</td><td>${h?h.localized_name:m.hero_id}</td><td class="${m.win?'up':'dn'}">${m.win?'Vitória':'Derrota'}</td><td>${m.kills} / ${m.deaths} / ${m.assists}</td><td>${m.gold_per_min} GPM</td><td>${m.last_hits} LH</td><td>${Math.floor(m.duration/60)}:${String(m.duration%60).padStart(2,'0')}</td><td><a href="https://www.opendota.com/matches/${m.match_id}" target="_blank" rel="noopener">Detalhes</a></td></tr>`}).join('')+'</table></div></section>';
+  box.innerHTML=html;
+  $('#pt').onchange=e=>{ptype=e.target.value;prender()};
+  if($('#ph')){$('#ph').onchange=e=>{phero=+e.target.value;bench()};bench()}
+}
+
+async function bench(){
+  const box=$('#bm'); if(!box) return;
+  const rows=pdata.all.filter(PT[ptype][1]).filter(m=>m.hero_id===phero);
+  box.innerHTML='<p class="msg">Carregando referência…</p>';
+  try{
+    const b=(await get(`/benchmarks?hero_id=${phero}`)).result||{}, pos=[];
+    const tr=MET.map(([k,l,f])=>{
+      const mine=mean(rows,f), arr=b[k]||[], at=p=>(arr.find(x=>Math.abs(x.percentile-p)<.001)||{}).value, fm=v=>v==null?'–':f1(v);
+      if(!arr.length) return `<tr><td>${l}</td><td>${f1(mine)}</td><td>–</td><td>–</td><td>–</td><td></td></tr>`;
+      let pp=0; arr.forEach(x=>{if(mine>=x.value)pp=x.percentile}); pos.push([l,pp]);
+      return `<tr><td>${l}</td><td>${f1(mine)}</td><td>${fm(at(.5))}</td><td>${fm(at(.9))}</td><td>${fm(at(.99))}</td><td class="${pp>=.5?'up':'dn'}">${pp?'acima de '+Math.round(pp*100)+'% dos jogadores':'abaixo de 10%'}</td></tr>`;
+    }).join('');
+    const weak=[...pos].sort((a,b)=>a[1]-b[1])[0];
+    box.innerHTML=`<div class="box tbw"><table class="tb"><tr><th>Média de ${rows.length} jogos</th><th>Você</th><th>Mediana</th><th>Top 10%</th><th>Top 1%</th><th>Sua posição</th></tr>${tr}</table></div>`+
+      (weak?`<p style="margin:10px 0 0">Métrica mais distante da referência: <strong>${weak[0]}</strong>.</p>`:'')+
+      '<p class="note" style="margin-top:6px">A referência mistura todos os ranks para esse herói. O Top 1% é o mais próximo de uma partida perfeita. Suportes têm farm baixo por função, então compare com cuidado.</p>';
+  }catch(e){box.innerHTML='<p class="msg err">Não foi possível carregar a referência ('+e.message+').</p>'}
+}
+
 function fail(e){app.innerHTML=`<p class="msg err">Não foi possível carregar os dados da OpenDota (${e.message}). Tente de novo em alguns segundos; o plano gratuito limita as requisições por minuto.</p>`}
 
 function route(){
   if(!heroes.length) return;
-  const m=location.hash.match(/^#\/hero\/(\d+)/);
-  location.hash==='#/counters'?counters():m?detail(m[1]):home();
+  const m=location.hash.match(/^#\/hero\/(\d+)/), pm=location.hash.match(/^#\/player(?:\/(\d+))?/);
+  pm?player(pm[1]):location.hash==='#/counters'?counters():m?detail(m[1]):home();
   window.scrollTo(0,0);
 }
 
