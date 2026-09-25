@@ -234,7 +234,10 @@ async function psearch(q){
   }catch(e){fail(e)}
 }
 const PT={all:['Todas',()=>true],rank:['Ranqueada',m=>m.lobby_type===7],normal:['Normal',m=>m.lobby_type===0&&m.game_mode!==23],turbo:['Turbo',m=>m.game_mode===23],custom:['Personalizada (lobby)',m=>m.lobby_type===1],bots:['Contra bots',m=>m.lobby_type===4]};
-let ptype='all', pdata=null, phero=null;
+let ptype='all', prole='all', pdata=null, phero=null;
+const ROLES={all:'Todas',1:'Lane segura',2:'Meio',3:'Lane difícil',4:'Selva',0:'Sem dados de lane'};
+const fl=m=>PT[ptype][1](m)&&(prole==='all'||(prole==='0'?!m.lane_role:m.lane_role==prole));
+function bindF(){$('#pt').onchange=e=>{ptype=e.target.value;prender()};$('#pf').onchange=e=>{prole=e.target.value;prender()}}
 const dm=m=>Math.max(m.duration/60,1);
 const mean=(a,f)=>a.length?a.reduce((t,m)=>t+f(m),0)/a.length:0;
 const f1=x=>x.toFixed(1);
@@ -243,7 +246,7 @@ const MET=[['gold_per_min','GPM',m=>m.gold_per_min],['xp_per_min','XPM',m=>m.xp_
 async function pload(id){
   const box=$('#pr'); box.innerHTML='<p class="msg">Carregando partidas…</p>';
   try{
-    const F=['match_id','player_slot','radiant_win','duration','game_mode','lobby_type','hero_id','start_time','kills','deaths','assists','gold_per_min','xp_per_min','last_hits','hero_damage'];
+    const F=['match_id','player_slot','radiant_win','duration','game_mode','lobby_type','hero_id','start_time','kills','deaths','assists','gold_per_min','xp_per_min','last_hits','hero_damage','lane_role'];
     const [pr,ms]=await Promise.all([get(`/players/${id}`),get(`/players/${id}/matches?limit=200&`+F.map(x=>'project='+x).join('&'))]);
     if(!pr.profile){box.innerHTML='<p class="msg">Jogador não encontrado.</p>';return}
     pdata={pr,all:ms.map(m=>({...m,win:(m.player_slot<128)===m.radiant_win}))};
@@ -252,11 +255,11 @@ async function pload(id){
 }
 
 function prender(){
-  const {pr,all}=pdata, box=$('#pr'), rows=all.filter(PT[ptype][1]), n=rows.length, H=i=>heroes.find(h=>h.id===i);
+  const {pr,all}=pdata, box=$('#pr'), rows=all.filter(fl), n=rows.length, H=i=>heroes.find(h=>h.id===i);
   const head=`<div class="hero-head"><img src="${pr.profile.avatarfull}" alt="" style="width:80px"><div><h2>${pr.profile.personaname||'Jogador'}</h2><p>${rk(pr.rank_tier)}</p></div></div>`;
   if(!all.length){box.innerHTML=head+'<p class="msg">Nenhuma partida pública encontrada. O perfil pode estar com os dados de partidas privados.</p>';return}
-  let html=head+`<div class="tools">Tipo de partida <select id="pt" aria-label="Tipo de partida">${Object.entries(PT).map(([k,v])=>`<option value="${k}" ${k===ptype?'selected':''}>${v[0]}</option>`).join('')}</select><span>${n} partidas (das 200 mais recentes)</span></div>`;
-  if(!n){box.innerHTML=html+'<p class="msg">Nenhuma partida desse tipo entre as 200 mais recentes.</p>';$('#pt').onchange=e=>{ptype=e.target.value;prender()};return}
+  let html=head+`<div class="tools">Tipo de partida <select id="pt" aria-label="Tipo de partida">${Object.entries(PT).map(([k,v])=>`<option value="${k}" ${k===ptype?'selected':''}>${v[0]}</option>`).join('')}</select> Função <select id="pf" aria-label="Função">${Object.entries(ROLES).map(([k,v])=>`<option value="${k}" ${k===prole?'selected':''}>${v}</option>`).join('')}</select><span>${n} partidas (das 200 mais recentes)</span></div><p class="note">Função é a lane onde o herói ficou nos primeiros minutos. Ela só existe para partidas já processadas pela OpenDota, e suportes aparecem na lane em que jogaram.</p>`;
+  if(!n){box.innerHTML=html+'<p class="msg">Nenhuma partida desse tipo entre as 200 mais recentes.</p>';bindF();return}
   const w=rows.filter(m=>m.win), l=rows.filter(m=>!m.win);
   const stat=(v,t)=>`<span class="stat"><strong>${v}</strong>${t}</span>`;
   const sum=k=>rows.reduce((t,m)=>t+m[k],0);
@@ -272,15 +275,15 @@ function prender(){
     if(!list.some(([id])=>+id===phero)) phero=+list[0][0];
     html+=`<div class="tools">Herói <select id="ph" aria-label="Herói">${list.map(([id,c])=>`<option value="${id}" ${+id===phero?'selected':''}>${H(+id)?.localized_name||id} (${c} jogos)</option>`).join('')}</select></div><div id="bm"></div>`;
   }else html+='<p class="note">Precisa de pelo menos 3 partidas com o mesmo herói neste filtro.</p>';
-  html+='</section><section><h3>Últimas partidas</h3><div class="box tbw"><table class="tb">'+rows.slice(0,15).map(m=>{const h=H(m.hero_id);return `<tr><td>${h?`<img src="${img(h)}" alt="">`:''}</td><td>${h?h.localized_name:m.hero_id}</td><td class="${m.win?'up':'dn'}">${m.win?'Vitória':'Derrota'}</td><td>${m.kills} / ${m.deaths} / ${m.assists}</td><td>${m.gold_per_min} GPM</td><td>${m.last_hits} LH</td><td>${Math.floor(m.duration/60)}:${String(m.duration%60).padStart(2,'0')}</td><td><a href="https://www.opendota.com/matches/${m.match_id}" target="_blank" rel="noopener">Detalhes</a></td></tr>`}).join('')+'</table></div></section>';
+  html+='</section><section><h3>Últimas partidas</h3><div class="box tbw"><table class="tb">'+rows.slice(0,15).map(m=>{const h=H(m.hero_id);return `<tr><td>${h?`<img src="${img(h)}" alt="">`:''}</td><td>${h?h.localized_name:m.hero_id}</td><td class="${m.win?'up':'dn'}">${m.win?'Vitória':'Derrota'}</td><td>${m.kills} / ${m.deaths} / ${m.assists}</td><td>${m.gold_per_min} GPM</td><td>${m.last_hits} LH</td><td>${Math.floor(m.duration/60)}:${String(m.duration%60).padStart(2,'0')}</td><td><a href="#/match/${m.match_id}/${m.hero_id}">Analisar</a></td></tr>`}).join('')+'</table></div></section>';
   box.innerHTML=html;
-  $('#pt').onchange=e=>{ptype=e.target.value;prender()};
+  bindF();
   if($('#ph')){$('#ph').onchange=e=>{phero=+e.target.value;bench()};bench()}
 }
 
 async function bench(){
   const box=$('#bm'); if(!box) return;
-  const rows=pdata.all.filter(PT[ptype][1]).filter(m=>m.hero_id===phero);
+  const rows=pdata.all.filter(fl).filter(m=>m.hero_id===phero);
   box.innerHTML='<p class="msg">Carregando referência…</p>';
   try{
     const b=(await get(`/benchmarks?hero_id=${phero}`)).result||{}, pos=[];
@@ -297,12 +300,159 @@ async function bench(){
   }catch(e){box.innerHTML='<p class="msg err">Não foi possível carregar a referência ('+e.message+').</p>'}
 }
 
+async function requestParse(mid){
+  await fetch(`${API}/request/${mid}`,{method:'POST'});
+  for(let i=0;i<15;i++){
+    await new Promise(r=>setTimeout(r,4000));
+    const j=await fetch(`${API}/request/${mid}`).then(r=>r.json()).catch(()=>null);
+    if(!j||!j.jobId) return true;
+  }
+  return false;
+}
+async function matchDetail(mid,hid){
+  app.innerHTML='<a class="back" href="javascript:history.back()">← Voltar</a><p class="msg">Carregando dados minuto a minuto…</p>';
+  try{
+    delete cache[`/matches/${mid}`];
+    let m=await get(`/matches/${mid}`);
+    if(!m.version){
+      app.innerHTML='<a class="back" href="javascript:history.back()">← Voltar</a><p class="msg">Esta partida ainda não foi processada em detalhe pela OpenDota. Pedindo o processamento agora, isso leva cerca de 30 a 60 segundos…</p>';
+      const ok=await requestParse(mid);
+      delete cache[`/matches/${mid}`];
+      m=await get(`/matches/${mid}`);
+      if(!ok||!m.version){app.innerHTML='<a class="back" href="javascript:history.back()">← Voltar</a><p class="msg err">O processamento está demorando mais que o normal. Espere um pouco e clique em "Analisar" de novo nesta partida.</p>';return}
+    }
+    const me=m.players.find(p=>p.hero_id==hid); if(!me){app.innerHTML='<p class="msg err">Herói não encontrado nessa partida.</p>';return}
+    const H=i=>heroes.find(h=>h.id===i), h=H(me.hero_id), win=(me.player_slot<128)===m.radiant_win;
+    const myLane = me.lane_role || me.lane;
+    let foe=null, foeGuess=false, foeReason='';
+    if(myLane){
+      foe=m.players.find(p=>p.isRadiant!==me.isRadiant&&(p.lane_role||p.lane)===myLane);
+      if(!foe) foeReason='nenhum herói inimigo tem o mesmo papel de lane registrado nesta partida';
+    } else foeReason='esta partida não tem o papel de lane preenchido pela OpenDota';
+    if(!foe){
+      const enemies=m.players.filter(p=>p.isRadiant!==me.isRadiant&&p.gold_t&&p.gold_t.length);
+      if(enemies.length&&gt.length>5){
+        const dist=p=>[2,4,6].reduce((s,t)=>s+Math.abs((gt[t]||0)-(p.gold_t[t]||0)),0);
+        foe=enemies.map(p=>({p,d:dist(p)})).sort((a,b)=>a.d-b.d)[0]?.p;
+        if(foe) foeGuess=true;
+      }
+    }
+    const gt=me.gold_t||[], xt=me.xp_t||[], N=gt.length;
+    const rate=(arr,a,b)=>b>a?(arr[Math.min(b,arr.length-1)]-arr[a])/(b-a):0;
+    let windows=[];
+    for(let t=0;t+5<=N-1;t++) windows.push({t,r:rate(gt,t,t+5)});
+    const early=rate(gt,0,Math.min(10,N-1))||1;
+    const drop=windows.filter(w=>w.t>=8).map(w=>({...w,pct:1-w.r/early})).sort((a,b)=>b.pct-a.pct)[0];
+    const leadAt=t=>foe?(gt[Math.min(t,gt.length-1)]||0)-(foe.gold_t[Math.min(t,foe.gold_t.length-1)]||0):null;
+    const l10=leadAt(10), l20=leadAt(20);
+    let notes=[];
+    if(foe){
+      notes.push((foeGuess?'Estimativa de oponente de lane (sem dado direto, por ouro parecido no início): ':'')+`Contra ${H(foe.hero_id)?.localized_name||'o oponente de lane'}, sua diferença de ouro foi ${l10>=0?'+':''}${l10} aos 10min`+(N>20?` e ${l20>=0?'+':''}${l20} aos 20min`:'')+'.');
+      if(l10!=null&&l20!=null&&l10>150&&l20<l10-150) notes.push('Você estava à frente no início da lane, mas essa vantagem encolheu depois. Vale olhar o que aconteceu logo após o fim das rotas.');
+      if(l10!=null&&l20!=null&&l20>l10+150) notes.push('Sua vantagem sobre o oponente de lane cresceu depois do início, sinal de que o meio de jogo foi bem para você.');
+    } else notes.push(`Não deu para comparar com um oponente da mesma lane: ${foeReason}.`);
+    if(drop&&N>15){
+      const sev = drop.pct>0.5?'grande':drop.pct>0.2?'queda':null;
+      if(sev) notes.push(`Seu ganho de ouro caiu ${Math.round(drop.pct*100)}% entre os minutos ${drop.t} e ${drop.t+5}, comparado ao seu ritmo dos primeiros 10 minutos. Se isso coincidiu com sair da lane para gankar ou rotacionar, é sinal de troca de farm por presença no mapa.`);
+    }
+    const overallGpm=me.gold_per_min, benchGpm=null;
+    const tbl=windows.filter((w,i)=>i%5===0).map(w=>`<tr><td>${w.t}–${w.t+5}min</td><td>${Math.round(w.r)} ouro/min</td></tr>`).join('');
+    app.innerHTML=`<a class="back" href="javascript:history.back()">← Voltar</a>
+    <div class="hero-head"><img src="${img(h)}" alt=""><div><h2>${h.localized_name}</h2><p class="${win?'up':'dn'}" style="font-weight:600">${win?'Vitória':'Derrota'} · ${Math.floor(m.duration/60)}min</p>
+    <p><span class="stat"><strong>${overallGpm}</strong>GPM médio</span><span class="stat"><strong>${me.kills}/${me.deaths}/${me.assists}</strong>K/D/A</span></p></div></div>
+    <section><h3>O que os números mostram</h3><div class="box">`+
+    notes.map(n=>`<p style="margin:0 0 10px">${n}</p>`).join('')+
+    '</div><p class="note" style="margin-top:8px">Isso é cálculo direto sobre ouro/minuto e comparação com o oponente da mesma lane (quando identificável), sem IA e sem saber o motivo real da decisão. Trate como pista, não veredito.</p></section>'+
+    (N>10?`<section><h3>Ouro por minuto ao longo da partida</h3><div class="box tbw"><table class="tb">${tbl}</table></div></section>`:'');
+    app.innerHTML+='<section><h3>Eventos da partida</h3><div id="ev"><p class="msg">Carregando…</p></div></section><section><h3>Composição dos times</h3><div id="cp"><p class="msg">Carregando…</p></div></section>';
+    app.innerHTML+='<section><h3>Gráficos da partida</h3><div id="gr"></div></section>';
+    charts(m,me);
+    events(m,me);
+    composition(m,me);
+  }catch(e){fail(e)}
+}
+
+const mm2=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+const PAL=['#5bbf5b','#e5533d','#4a9be8','#d9a441','#a879e0','#5bd0c9','#e07ab0','#8ab04a','#e0a679','#7a8ae0'];
+function svgLine(series,{h=180,yfmt=v=>v,zero=false}={}){
+  const w=920, pad={l:44,r:8,t:8,b:20};
+  const all=series.flatMap(s=>s.data.filter(v=>v!=null));
+  if(!all.length) return '<p class="note">Sem dados para este gráfico.</p>';
+  let mn=Math.min(...all,zero?0:Infinity), mx=Math.max(...all,zero?0:-Infinity);
+  if(mn===mx){mn-=1;mx+=1}
+  const n=Math.max(...series.map(s=>s.data.length));
+  const X=i=>pad.l+(w-pad.l-pad.r)*(n>1?i/(n-1):0);
+  const Y=v=>pad.t+(h-pad.t-pad.b)*(1-(v-mn)/(mx-mn));
+  const path=s=>s.data.map((v,i)=>v==null?null:`${X(i)},${Y(v)}`).filter(Boolean).join(' L ');
+  const grid=[0,.5,1].map(f=>{const v=mn+(mx-mn)*f;return `<line x1="${pad.l}" x2="${w-pad.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="2" y="${Y(v)+4}" font-size="10" fill="var(--mu)">${yfmt(Math.round(v))}</text>`}).join('');
+  const zeroLine=zero&&mn<0&&mx>0?`<line x1="${pad.l}" x2="${w-pad.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--mu)" stroke-dasharray="3,3"/>`:'';
+  const lines=series.map(s=>`<path d="M ${path(s)}" fill="none" stroke="${s.color}" stroke-width="2"/>`).join('');
+  const legend=series.map(s=>`<span style="color:${s.color};margin-right:12px;font-size:12px">● ${s.label}</span>`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block">${grid}${zeroLine}${lines}</svg><div style="margin-top:4px">${legend}</div>`;
+}
+function charts(m,me){
+  const box=$('#gr'); if(!box) return;
+  const N=(m.radiant_gold_adv||[]).length;
+  const sign=me.isRadiant?1:-1;
+  const goldAdv=(m.radiant_gold_adv||[]).map(v=>v*sign), xpAdv=(m.radiant_xp_adv||[]).map(v=>v*sign);
+  let html='';
+  if(N>1){
+    html+=`<div class="box"><h4>Vantagem do seu time (positivo = à frente)</h4>${svgLine([{data:goldAdv,color:'var(--gold)',label:'Ouro'},{data:xpAdv,color:'var(--int)',label:'Experiência'}],{zero:true})}</div>`;
+  }
+  const rad=m.players.filter(p=>p.isRadiant), dire=m.players.filter(p=>!p.isRadiant);
+  const series=(arr,key)=>arr.map((p,i)=>({data:p[key]||[],color:PAL[i%PAL.length],label:heroes.find(h=>h.id===p.hero_id)?.localized_name||'?'}));
+  html+=`<div class="box" style="margin-top:12px"><h4>Net worth por jogador — The Iluminados</h4>${svgLine(series(rad,'gold_t'))}</div>`;
+  html+=`<div class="box" style="margin-top:12px"><h4>Net worth por jogador — The Temidos</h4>${svgLine(series(dire,'gold_t'))}</div>`;
+  html+=`<div class="box" style="margin-top:12px"><h4>Last hits por jogador (todos)</h4>${svgLine(series(m.players,'lh_t'))}</div>`;
+  box.innerHTML=html+'<p class="note" style="margin-top:8px">Os nomes de times ("Iluminados"/"Temidos") são os que o próprio jogo sorteia nessa partida; Iluminados = seu lado se você jogou de Radiant.</p>';
+}
+function events(m,me){
+  const box=$('#ev'); if(!box) return;
+  const myTeam=me.isRadiant, meName='npc_dota_hero_'+heroes.find(h=>h.id===me.hero_id)?.name?.replace('npc_dota_hero_','')||'';
+  const deaths=m.players.flatMap(p=>(p.kills_log||[]).filter(k=>k.key===meName).map(k=>({...k,by:p.hero_id})))
+    .sort((a,b)=>a.time-b.time);
+  const obj=(m.objectives||[]).filter(o=>['CHAT_MESSAGE_TOWER_KILL','CHAT_MESSAGE_ROSHAN_KILL','CHAT_MESSAGE_AEGIS'].includes(o.type))
+    .map(o=>({...o,mine:(o.team===2)===myTeam})).sort((a,b)=>a.time-b.time);
+  let html='';
+  if(deaths.length){
+    html+=`<div class="box"><h4>Suas mortes (${deaths.length})</h4>`+deaths.map(d=>{
+      const by=heroes.find(h=>h.id===d.by);
+      return `<div class="mu" style="grid-template-columns:1fr auto"><div>${mm2(d.time)} — morto por ${by?by.localized_name:'ambiente/torre/jungle'}</div></div>`;
+    }).join('')+'<p class="note" style="margin-top:6px">Não inclui mortes para torres, Roshan ou criaturas neutras, só para heróis.</p></div>';
+  }
+  if(obj.length){
+    html+=`<div class="box" style="margin-top:12px"><h4>Torres e Roshan</h4>`+obj.map(o=>{
+      const label=o.type==='CHAT_MESSAGE_ROSHAN_KILL'?'Roshan morto':o.type==='CHAT_MESSAGE_AEGIS'?'Aegis pego':'Torre destruída'+(o.key?' ('+o.key.replace(/^npc_dota_/,'').replace(/_/g,' ')+')':'');
+      return `<div class="mu" style="grid-template-columns:1fr auto"><div>${mm2(o.time)} — ${label}</div><div class="${o.mine?'up':'dn'}">${o.mine?'seu time':'inimigo'}</div></div>`;
+    }).join('')+'</div>';
+  }
+  box.innerHTML=html||'<p class="note">Sem eventos de morte de herói ou objetivos detectados nos dados desta partida.</p>';
+}
+
+async function composition(m,me){
+  const box=$('#cp'); if(!box) return;
+  try{
+    const hs=await get('/heroStats');
+    const rate=id=>{const h=hs.find(x=>x.id===id); if(!h) return null;
+      const p=[6,7,8].reduce((s,i)=>s+(h[i+'_pick']||0),0), w=[6,7,8].reduce((s,i)=>s+(h[i+'_win']||0),0);
+      return p?w/p:null};
+    const side=isR=>m.players.filter(p=>p.isRadiant===isR).map(p=>({h:heroes.find(x=>x.id===p.hero_id),wr:rate(p.hero_id)}));
+    const mine=side(me.isRadiant), enemy=side(!me.isRadiant);
+    const avg=a=>{const v=a.map(x=>x.wr).filter(x=>x!=null); return v.length?v.reduce((s,x)=>s+x,0)/v.length:null};
+    const am=avg(mine), ae=avg(enemy);
+    const row=(a,label)=>`<div class="box"><h4>${label}</h4>`+a.map(x=>`<div class="mu" style="grid-template-columns:52px 1fr auto"><img src="${x.h?img(x.h):''}" alt=""><div>${x.h?x.h.localized_name:'?'}</div><div>${x.wr!=null?pct(x.wr):'–'}</div></div>`).join('')+'</div>';
+    box.innerHTML=`<p class="note">Win rate médio (Ancient+) de cada herói neste patch geral, como aproximação de força de composição. Não considera sinergia entre heróis nem counters entre os dois times, só a força individual média de cada escolha.</p>
+    <p style="margin:8px 0"><strong>Média do seu time: ${am!=null?pct(am):'–'}</strong> vs <strong>média do time inimigo: ${ae!=null?pct(ae):'–'}</strong></p>
+    <div class="cols">${row(mine,'Seu time')}${row(enemy,'Time inimigo')}</div>`;
+  }catch(e){box.innerHTML='<p class="msg err">Não foi possível carregar a composição ('+e.message+').</p>'}
+}
+
 function fail(e){app.innerHTML=`<p class="msg err">Não foi possível carregar os dados da OpenDota (${e.message}). Tente de novo em alguns segundos; o plano gratuito limita as requisições por minuto.</p>`}
 
 function route(){
   if(!heroes.length) return;
-  const m=location.hash.match(/^#\/hero\/(\d+)/), pm=location.hash.match(/^#\/player(?:\/(\d+))?/);
-  pm?player(pm[1]):location.hash==='#/counters'?counters():m?detail(m[1]):home();
+  const m=location.hash.match(/^#\/hero\/(\d+)/), pm=location.hash.match(/^#\/player(?:\/(\d+))?/), mm=location.hash.match(/^#\/match\/(\d+)\/(\d+)/);
+  mm?matchDetail(mm[1],mm[2]):pm?player(pm[1]):location.hash==='#/counters'?counters():m?detail(m[1]):home();
   window.scrollTo(0,0);
 }
 
@@ -318,6 +468,6 @@ function route(){
   $('#rank').onchange=()=>route();
   addEventListener('hashchange',route);
 })();
-</script> 
+</script>
 </body>
 </html>
